@@ -429,7 +429,7 @@ def configure()
     
 	// On/Off reporting of 0 seconds, maximum of 15 minutes if the device does not report any on/off activity
     zigbee.onOffConfig(0, 900) + 
-        "zdo bind 0x${device.deviceNetworkId} 0x02 0x01 6 {${device.zigbeeId}} {}, delay 200, he cr 0x${device.deviceNetworkId} 0x02 6 0 16 0 900 {}, delay 200]" +
+        "zdo bind 0x${device.deviceNetworkId} 0x02 0x01 6 {${device.zigbeeId}} {}, delay 200, he cr 0x${device.deviceNetworkId} 0x02 6 0 16 0 900 {}, delay 200]" +	// This does not seem to work
         powerConfig()
 }
 
