@@ -129,9 +129,10 @@ def parse(String description)
 			// Since the switch has reported that it is off it can't be using any power.  Set to zero in case the power report does not arrive, but do not report in event logs.
 			if (event.value == "off") sendEvent(name: "power", value: "0", descriptionText: "${device.displayName} power is 0 watts")
             
-            // Pass the switch event to the appropriate child device
-            logDebug("Looking for child device ${getChildName(msg.sourceEndpoint)}");
-            def cd = getChildDevice(getChildName(msg.sourceEndpoint))
+            // Pass the switch event to the appropriate child device. Endpoint is identified by different properties depending on whether switching is initiated from the child device 
+            // or from a physical button press
+            logDebug("Looking for child device ${getChildName(msg.sourceEndpoint ?: msg.endpoint)}");
+            def cd = getChildDevice(getChildName(msg.sourceEndpoint ?: msg.endpoint)) 
             if (cd)
             {
                 logDebug("Passing event to child ${cd.displayName}")
@@ -407,8 +408,13 @@ def createChildDevices()
         def cd = getChildDevice(childDeviceNetworkId)
         if (!cd)
         {
-            cd = addChildDevice("hubitat", "Generic Component Switch", childDeviceNetworkId, [name: "${device.displayName} EP${destEndpoint}", isComponent: true])
+            cd = addChildDevice("hubitat", "Generic Component Switch", childDeviceNetworkId, [name: "${device.deviceLabel} EP${destEndpoint}", isComponent: true])
             cd.parse([[name:"switch", value:"off", descriptionText:"set initial switch value"]])
+        }
+        else
+        {
+            // Update the names of the child device in case the device label was updated
+            cd.name = "${device.getLabel()} EP${destEndpoint}"
         }
     }
     
@@ -429,7 +435,7 @@ def configure()
     
 	// On/Off reporting of 0 seconds, maximum of 15 minutes if the device does not report any on/off activity
     zigbee.onOffConfig(0, 900) + 
-        "zdo bind 0x${device.deviceNetworkId} 0x02 0x01 6 {${device.zigbeeId}} {}, delay 200, he cr 0x${device.deviceNetworkId} 0x02 6 0 16 0 900 {}, delay 200]" +	// This does not seem to work
+        "zdo bind 0x${device.deviceNetworkId} 0x02 0x01 6 {${device.zigbeeId}} {}, delay 200, he cr 0x${device.deviceNetworkId} 0x02 6 0 16 0 900 {}, delay 200]" +    // This does not seem to work
         powerConfig()
 }
 
