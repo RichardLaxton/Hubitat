@@ -349,7 +349,7 @@ def refresh()
 //    logDebug zigbee.readAttribute(0xB77D, 0x02)
 //    logDebug zigbee.readAttribute(0x0B04, 0x0505)
 	zigbee.onOffRefresh() +                 // First switch
-        zigbee.readAttribute(0xB77D, 0x02) +    // Second switch
+        zigbee.readAttribute(0x006, 0x02) +    // Second switch
         zigbee.electricMeasurementPowerRefresh() + zigbee.readAttribute(0x0B04, 0x0505) + zigbee.readAttribute(0x0B04, 0x0508)
 }
 
