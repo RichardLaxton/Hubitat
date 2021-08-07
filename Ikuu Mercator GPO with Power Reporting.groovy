@@ -44,7 +44,7 @@ metadata
 		{
         		input "intervalMin", "number", title: "Minimum interval (seconds) between power, current and voltage reports:", defaultValue: 5, range: "1..600", required: false
         		input "intervalMax", "number", title: "Maximum interval (seconds) between power, current and voltage reports:", defaultValue: 600, range: "1..600", required: false
-       			input "minDeltaW", "enum", title: "Amount of power (W) change required to trigger a report:", defaultValue: "1", options: ["1", "5", "10", "20", "50", "100", "500", "1000"], required: false
+       			input "minDeltaW", "enum", title: "Amount of power (W) change required to trigger a report:", defaultValue: "5", options: ["1", "5", "10", "20", "50", "100", "500", "1000"], required: false
        			input "minDeltaV", "enum", title: "Amount of voltage (V) change required to trigger a report:", defaultValue: "1", options: ["1", "2", "5", "10"], required: false
        			input "minDeltaA", "enum", title: "Amount of current (A) change required to trigger a report:", defaultValue: "0.1", options: ["0.1", "0.5", "1", "2", "3", "5"], required: false
 		}
@@ -55,7 +55,6 @@ metadata
 		}
 	}
 }
-
 
 /*
 	installed
@@ -105,7 +104,7 @@ def initialize()
 */
 def parse(String description)
 {
-	logTrace "Msg: Description is $description"
+    logTrace "Msg: Description is ${description}"
 
 	def event = zigbee.getEvent(description)
 	def msg = zigbee.parseDescriptionAsMap(description)
@@ -131,7 +130,7 @@ def parse(String description)
             
             // Pass the switch event to the appropriate child device. Endpoint is identified by different properties depending on whether switching is initiated from the child device 
             // or from a physical button press
-            logDebug("Looking for child device ${getChildName(msg.sourceEndpoint ?: msg.endpoint)}");
+            logDebug("Looking for child device sourceEndpoint: ${msg.sourceEndpoint} endpoint: ${msg.endpoint} childName: ${getChildName(msg.sourceEndpoint ?: msg.endpoint)}");
             def cd = getChildDevice(getChildName(msg.sourceEndpoint ?: msg.endpoint)) 
             if (cd)
             {
@@ -200,8 +199,6 @@ def parse(String description)
 		{
 			if (cluster.data[0] == 0x00)
 			{
-				// Get a power meter reading
-				runIn(5, "refresh")
 				logDebug "POWER REPORTING CONFIG RESPONSE: " + cluster
 			}
 			else
@@ -241,9 +238,7 @@ private onOffClusterCommand(int destEndpoint, int command)
     }
 
     // Send command to on/off cluster (0x0006) on the appropriate target
-    def cmd = "he cmd 0x${device.deviceNetworkId} 0x${destEndpoint} 0x${zigbee.ON_OFF_CLUSTER} 0x${command} {}, delay 1000"
-    logDebug("Command is ${cmd}")
-    return cmd
+    return "he cmd 0x${device.deviceNetworkId} 0x${destEndpoint} 0x${zigbee.ON_OFF_CLUSTER} 0x${command} {}, delay 200"
 }
 
 /*
@@ -316,7 +311,7 @@ def toggle()
 */
 def identify()
 {
-	zigbee.writeAttribute(0x0003, 0x0000, DataType.UINT16, 0x00A)
+	zigbee.writeAttribute(0x0003, 0x0000, DataType.UINT16, 0x00A, [:], 200)
 }
 
 
@@ -329,9 +324,9 @@ def identify()
 def resetToFactoryDefault()
 {
 	logWarn "Resetting device to factory defaults..."
-	zigbee.command(0x0000, 0x00)
+	zigbee.command(0x0000, 0x00, [:], 200)
 	
-	runIn(10, configure)
+	runIn(1, configure)
 }
 
 
@@ -344,20 +339,24 @@ def resetToFactoryDefault()
 */
 def refresh()
 {
-	logDebug "Refresh called..."
-//    logDebug zigbee.onOffRefresh()
-//    logDebug zigbee.readAttribute(0xB77D, 0x02)
-//    logDebug zigbee.readAttribute(0x0B04, 0x0505)
-	zigbee.onOffRefresh() +                 // First switch
-        zigbee.readAttribute(0x006, 0x02) +    // Second switch
-        zigbee.electricMeasurementPowerRefresh() + zigbee.readAttribute(0x0B04, 0x0505) + zigbee.readAttribute(0x0B04, 0x0508)
+    def cmd = []
+
+    // Switch states
+    for (endpoint = 1; endpoint <= 2; endpoint++)
+    {
+        cmd += ["he rattr 0xB77D ${endpoint} 6 0 {}", "delay 1000"]
+    }
+
+    cmd += zigbee.electricMeasurementPowerRefresh(1000)         // Watts
+    cmd += zigbee.readAttribute(0x0B04, 0x0505, [:], 1000)      // Volts
+    cmd += zigbee.readAttribute(0x0B04, 0x0508, [:], 1000)      // Amps
+        
+    return cmd
 }
 
 def getDestinationEndpoint(childDevice)
 {
     def epId = childDevice.deviceNetworkId.split('-')[1]
-    logDebug("EP id is ${epId}")
-    
     return Integer.parseInt(epId, 16)
 }
 
@@ -375,7 +374,7 @@ def getChildName(destinationEndpoint)
 
 def componentOn(child)
 {
-    logDebug("componentOn(${child.deviceNetworkId})")
+    logDebug("componentOn(${child.deviceNetworkId}")
     sendHubCommand(new hubitat.device.HubAction(on(getDestinationEndpoint(child)), hubitat.device.Protocol.ZIGBEE))
 }
 
@@ -402,14 +401,13 @@ def deleteChildDevices()
 
 def createChildDevices()
 {
-    for (destEndpoint in [1, 2])
+    for (endpoint = 1; endpoint <= 2; endpoint++)
     {
         def childDeviceNetworkId = getChildName(destEndpoint)
         def cd = getChildDevice(childDeviceNetworkId)
         if (!cd)
         {
             cd = addChildDevice("hubitat", "Generic Component Switch", childDeviceNetworkId, [name: "${device.deviceLabel} EP${destEndpoint}", isComponent: true])
-            cd.parse([[name:"switch", value:"off", descriptionText:"set initial switch value"]])
         }
         else
         {
@@ -417,15 +415,13 @@ def createChildDevices()
             cd.name = "${device.getLabel()} EP${destEndpoint}"
         }
     }
-    
-    refresh();
 }
                                                
                                                
 /*
 	configure
     
-	Configures the Z-Wave repeater associations and establishes periodic device check.
+	Configures the device, creates children and sets up any reporting
 */
 def configure()
 {
@@ -433,10 +429,20 @@ def configure()
     
     createChildDevices()
     
+    def cmd = []
+    
 	// On/Off reporting of 0 seconds, maximum of 15 minutes if the device does not report any on/off activity
-    zigbee.onOffConfig(0, 900) + 
-        "zdo bind 0x${device.deviceNetworkId} 0x02 0x01 6 {${device.zigbeeId}} {}, delay 200, he cr 0x${device.deviceNetworkId} 0x02 6 0 16 0 900 {}, delay 200]" +    // This does not seem to work
-        powerConfig()
+    for (endpoint = 1; endpoint <= 2; endpoint++)
+    {
+        cmd += ["zdo bind ${device.deviceNetworkId} ${endpoint} 0x01 0x0006 {${device.zigbeeId}} {}", 
+                "delay 1000", 
+                "he cr 0x${device.deviceNetworkId} ${endpoint} 6 0 16 0 900 {}", 
+                "delay 1000"]
+    }
+    cmd += powerConfig()
+    cmd += refresh()
+    
+    return cmd
 }
 
 
@@ -449,17 +455,18 @@ def configure()
 def powerConfig()
 {
 	// Calculate threshold
-	def powerDelta = (int) Float.parseFloat(minDeltaW ?: "1")                // Power is in watts
-	def currentDelta = (int) (Float.parseFloat(minDeltaA ?: "0.1") * 1000)     // Power is in mW of a watt
-	
-	logDebug "Configuring power reporting intervals; min: ${intervalMin}, max: ${intervalMax}, deltaW: ${powerDelta}, deltaA: ${currentDelta}, endpointId: ${endpointId}"
-
+	int powerDelta = (int) (Float.parseFloat(minDeltaW ?: "1") * 10)           // Power is in tenths of a watt
+	int currentDelta = (int) (Float.parseFloat(minDeltaA ?: "0.1") * 1000)     // Current is in mA
+    int voltageDelta = (int) (Float.parseFloat(minDeltaV ?: "10")  * 10)       // Voltage is in tenths of a volt
+    
     def cfg = []
 
     // All reporting shares the same interval between 5 seconds and 3 minutes by default, override in settings
-	cfg +=	zigbee.configureReporting(0x0B04, 0x050B, DataType.INT16, (int) (intervalMin ?: 5), (int) (intervalMax ?: 600), (int) powerDelta)	    // Wattage report
-	cfg +=	zigbee.configureReporting(0x0B04, 0x0505, DataType.UINT16, (int) (intervalMin ?: 5), (int) (intervalMax ?: 600), 1)				    // Voltage report
-    cfg +=  zigbee.configureReporting(0x0B04, 0x0508,  DataType.UINT16, (int) (intervalMin ?: 5), (int) (intervalMax ?: 600), (int) currentDelta);  // RMS Current
+	cfg +=	zigbee.configureReporting(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, 0x050B, DataType.INT16, (int) (intervalMin ?: 5), (int) (intervalMax ?: 600), powerDelta, [:], 1000)	    // Wattage report
+    
+    // Voltage report trigger level does not seem to work so set minimum interval to 120 seconds
+	cfg +=	zigbee.configureReporting(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, 0x0505, DataType.UINT16, 120, (int) (intervalMax ?: 600), voltageDelta, [:], 1000)    // Voltage report
+    cfg +=  zigbee.configureReporting(zigbee.ELECTRICAL_MEASUREMENT_CLUSTER, 0x0508,  DataType.UINT16, (int) (intervalMin ?: 5), (int) (intervalMax ?: 600), currentDelta, [:], 1000);  // RMS Current
 
 	return cfg
 }
