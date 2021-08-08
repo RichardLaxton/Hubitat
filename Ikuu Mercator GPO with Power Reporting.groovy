@@ -403,16 +403,16 @@ def createChildDevices()
 {
     for (endpoint = 1; endpoint <= 2; endpoint++)
     {
-        def childDeviceNetworkId = getChildName(destEndpoint)
+        def childDeviceNetworkId = getChildName(endpoint)
         def cd = getChildDevice(childDeviceNetworkId)
         if (!cd)
         {
-            cd = addChildDevice("hubitat", "Generic Component Switch", childDeviceNetworkId, [name: "${device.deviceLabel} EP${destEndpoint}", isComponent: true])
+            cd = addChildDevice("hubitat", "Generic Component Switch", childDeviceNetworkId, [name: "${device.label ?: device.deviceNetworkId} EP${endpoint}", isComponent: true])
         }
         else
         {
             // Update the names of the child device in case the device label was updated
-            cd.name = "${device.getLabel()} EP${destEndpoint}"
+            cd.name = "${device.label ?: device.deviceNetworkId} EP${endpoint}"
         }
     }
 }
