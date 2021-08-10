@@ -58,13 +58,11 @@ metadata
 
 /*
 	installed
-    
-	Doesn't do much other than call configure().
 */
 def installed()
 {
+    logInfo "Installed"
 	initialize()
-    configure()
 }
 
 
@@ -77,7 +75,6 @@ def updated()
 {
     logInfo "Configuration saved"
 	initialize()
-    configure()
 }
 
 /*
@@ -87,6 +84,7 @@ def updated()
 */
 def initialize()
 {
+    logInfo "Initialize"    
 	state.lastSwitch = 0
 
 	if (enableTrace || enableDebug)
@@ -94,13 +92,15 @@ def initialize()
 		logInfo "Verbose logging has been enabled for the next 30 minutes."
 		runIn(1800, logsOff)
 	}
+    
+    configure()
 }
 
 
 /*
 	parse
     
-	Processes incoming zigbee messages from the Iris Smart Plug.
+	Processes incoming zigbee messages
 */
 def parse(String description)
 {
@@ -130,8 +130,8 @@ def parse(String description)
             
             // Pass the switch event to the appropriate child device. Endpoint is identified by different properties depending on whether switching is initiated from the child device 
             // or from a physical button press
-            logDebug("Looking for child device sourceEndpoint: ${msg.sourceEndpoint} endpoint: ${msg.endpoint} childName: ${getChildName(msg.sourceEndpoint ?: msg.endpoint)}");
-            def cd = getChildDevice(getChildName(msg.sourceEndpoint ?: msg.endpoint)) 
+            logDebug "Looking for device ${getChildNetworkId(msg.sourceEndpoint ?: msg.endpoint)}"
+            def cd = getChildDevice(getChildNetworkId(msg.sourceEndpoint ?: msg.endpoint)) 
             if (cd)
             {
                 logDebug("Passing event to child ${cd.displayName}")
@@ -216,6 +216,12 @@ def parse(String description)
         else if (cluster?.clusterId == 0x8021)
         {
             logInfo "Bind response"
+        }
+
+        // Handle general cluster events
+        else if (cluster?.clusterId == 0x8001)
+        {
+            logInfo "General cluster event"
         }
 
         else
@@ -366,15 +372,24 @@ def getDestinationEndpoint(childDevice)
     return Integer.parseInt(epId, 16)
 }
 
-def getChildName(destinationEndpoint)
+def getChildNetworkId(destinationEndpoint)
 {
-    if (destinationEndpoint)
-    {
-        def destEndpoint = (destinationEndpoint instanceof Integer) ? 
+    def destEndpoint = (destinationEndpoint instanceof Integer) ? 
             destinationEndpoint :
             Integer.parseInt(destinationEndpoint, 16)
-        
-        return "${device.id}-${destEndpoint}"
+    
+    return "${device.deviceNetworkId}-${destEndpoint}"
+}
+
+def getChildLabel(destinationEndpoint)
+{
+    switch (destinationEndpoint)
+    {
+        case 1: 
+            return "Left socket"
+            break;
+         case 2:
+            return "Right socket"
     }
 }
 
@@ -409,16 +424,18 @@ def createChildDevices()
 {
     for (endpoint = 1; endpoint <= 2; endpoint++)
     {
-        def childDeviceNetworkId = getChildName(endpoint)
+        def childDeviceNetworkId = getChildNetworkId(endpoint)
+        def childLabel = getChildLabel(endpoint)
         def cd = getChildDevice(childDeviceNetworkId)
         if (!cd)
         {
-            cd = addChildDevice("hubitat", "Generic Component Switch", childDeviceNetworkId, [name: "${device.label ?: device.deviceNetworkId} EP${endpoint}", isComponent: true])
+            cd = addChildDevice("hubitat", "Generic Component Switch", childDeviceNetworkId, [label: childLabel, isComponent: true])
         }
         else
         {
-            // Update the names of the child device in case the device label was updated
-            cd.name = "${device.label ?: device.deviceNetworkId} EP${endpoint}"
+            // Update the names of the child device in case the device labelling rules changed
+            cd.name = "Generic Component Switch"
+            cd.label = childLabel
         }
     }
 }
