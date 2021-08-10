@@ -172,13 +172,13 @@ def parse(String description)
 			logTrace "${device.displayName} RMS current is ${value} A"
 		}
 	}
-
+    
 	// Handle everything else
 	else
 	{
 		def cluster = zigbee.parse(description)
 
-		if (cluster && cluster.clusterId == 0x0006 && (cluster.command == 0x07 || cluster.command == 0x0B))
+		if (cluster?.clusterId == 0x0006 && (cluster.command == 0x07 || cluster.command == 0x0B))
 		{
 			if (cluster.data[0] == 0x00 || cluster.data[0] == 0x02)
 			{
@@ -195,7 +195,7 @@ def parse(String description)
 				event = null
 			}
 		}
-		else if (cluster && cluster.clusterId == 0x0B04 && cluster.command == 0x07)
+		else if (cluster?.clusterId == 0x0B04 && cluster.command == 0x07)
 		{
 			if (cluster.data[0] == 0x00)
 			{
@@ -207,12 +207,18 @@ def parse(String description)
 				event = null
 			}
 		}
-		else if (cluster && cluster.clusterId == 0x0003 && cluster.command == 0x04)
+		else if (cluster?.clusterId == 0x0003 && cluster.command == 0x04)
 		{
 			logInfo "LOCATING DEVICE FOR 30 SECONDS"
 		}
+        
+        // Handle bind responses
+        else if (cluster?.clusterId == 0x8021)
+        {
+            logInfo "Bind response"
+        }
 
-		else
+        else
 		{
 			logWarn "DID NOT PARSE MESSAGE for description : $description"
 			logDebug "${cluster}"
